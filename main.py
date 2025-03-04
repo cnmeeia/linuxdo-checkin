@@ -1,3 +1,4 @@
+
 import os
 import random
 import time
@@ -155,4 +156,3 @@ if __name__ == "__main__":
         exit(1)
     l = LinuxDoBrowser()
     l.run()
-root@cnmeeia:~/linuxdo-checkin# 
