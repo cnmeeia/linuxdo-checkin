@@ -1,4 +1,3 @@
-
 import os
 import random
 import time
@@ -8,7 +7,9 @@ import sys
 from loguru import logger
 from playwright.sync_api import sync_playwright
 from tabulate import tabulate
+from dotenv import load_dotenv
 
+load_dotenv()
 
 def retry_decorator(retries=3):
     def decorator(func):
@@ -18,25 +19,18 @@ def retry_decorator(retries=3):
                 try:
                     return func(*args, **kwargs)
                 except Exception as e:
-                    if attempt == retries - 1:  # 最后一次尝试
+                    if attempt == retries - 1:
                         logger.error(f"函数 {func.__name__} 最终执行失败: {str(e)}")
                     logger.warning(f"函数 {func.__name__} 第 {attempt + 1}/{retries} 次尝试失败: {str(e)}")
                     time.sleep(1)
             return None
-
         return wrapper
-
     return decorator
-
-
-os.environ.pop("DISPLAY", None)
-os.environ.pop("DYLD_LIBRARY_PATH", None)
 
 USERNAME = os.environ.get("USERNAME")
 PASSWORD = os.environ.get("PASSWORD")
 
 HOME_URL = "https://linux.do/"
-
 
 class LinuxDoBrowser:
     def __init__(self) -> None:
@@ -47,39 +41,26 @@ class LinuxDoBrowser:
         self.page.goto(HOME_URL)
 
     def login(self):
-    logger.info("开始登录")
+        logger.info("开始登录")
+        try:
+            self.page.wait_for_selector(".login-button .d-button-label", state="visible", timeout=60000)
+            self.page.click(".login-button .d-button-label")
+        except Exception as e:
+            logger.warning(f"普通点击失败，尝试 JavaScript 方式: {e}")
+            self.page.evaluate("document.querySelector('.login-button .d-button-label').click()")
 
-    # 确保按钮加载完成
-    self.page.wait_for_selector(".login-button .d-button-label", state="visible", timeout=60000)
-
-    # 尝试点击按钮
-    try:
-        self.page.click(".login-button .d-button-label")
-    except Exception as e:
-        logger.warning(f"普通点击失败，尝试 JavaScript 方式: {e}")
-        self.page.evaluate("document.querySelector('.login-button .d-button-label').click()")
-
-    time.sleep(2)
-
-    # 填写用户名和密码
-    self.page.fill("#login-account-name", USERNAME)
-    self.page.fill("#login-account-password", PASSWORD)
-
-    time.sleep(2)
-    self.page.click("#login-button")
-
-    # 等待登录完成
-    time.sleep(10)
-
-    # 验证登录状态
-    user_ele = self.page.query_selector("#current-user")
-    if not user_ele:
-        logger.error("登录失败，截图保存")
-        self.page.screenshot(path="login_failed.png")
-        return False
-    else:
-        logger.info("登录成功")
-        return True
+        try:
+            self.page.wait_for_selector("#login-account-name", state="visible", timeout=10000)
+            self.page.fill("#login-account-name", USERNAME)
+            self.page.fill("#login-account-password", PASSWORD)
+            self.page.click("#login-button")
+            self.page.wait_for_selector("#current-user", state="visible", timeout=20000)
+            logger.info("登录成功")
+            return True
+        except Exception as e:
+            logger.error(f"登录失败: {e}")
+            self.page.screenshot(path="login_failed.png")
+            return False
 
     def click_topic(self):
         topic_list = self.page.query_selector_all("#list-area .title")
@@ -91,26 +72,25 @@ class LinuxDoBrowser:
     def click_one_topic(self, topic_url):
         page = self.context.new_page()
         page.goto(HOME_URL + topic_url)
-        if random.random() < 0.3:  # 0.3 * 30 = 9
+        if random.random() < 0.3:
             self.click_like(page)
         self.browse_post(page)
         page.close()
 
     def browse_post(self, page):
         prev_url = None
-        # 开始自动滚动，最多滚动10次
         for _ in range(10):
-            # 随机滚动一段距离
-            scroll_distance = random.randint(550, 650)  # 随机滚动 550-650 像素
+            scroll_distance = random.randint(550, 650)
             logger.info(f"向下滚动 {scroll_distance} 像素...")
             page.evaluate(f"window.scrollBy(0, {scroll_distance})")
             logger.info(f"已加载页面: {page.url}")
-
-            if random.random() < 0.03:  # 33 * 4 = 132
+            try:
+                page.wait_for_function("document.readyState === 'complete'", timeout=5000)
+            except:
+                logger.warning("页面加载超时或失败。")
+            if random.random() < 0.03:
                 logger.success("随机退出浏览")
                 break
-
-            # 检查是否到达页面底部
             at_bottom = page.evaluate("window.scrollY + window.innerHeight >= document.body.scrollHeight")
             current_url = page.url
             if current_url != prev_url:
@@ -118,22 +98,19 @@ class LinuxDoBrowser:
             elif at_bottom and prev_url == current_url:
                 logger.success("已到达页面底部，退出浏览")
                 break
-
-            # 动态随机等待
-            wait_time = random.uniform(2, 4)  # 随机等待 2-4 秒
+            wait_time = random.uniform(2, 4)
             logger.info(f"等待 {wait_time:.2f} 秒...")
             time.sleep(wait_time)
 
     def run(self):
         if not self.login():
             logger.error("登录失败，程序终止")
-            sys.exit(1)  # 使用非零退出码终止整个程序
+            sys.exit(1)
         self.click_topic()
         self.print_connect_info()
 
     def click_like(self, page):
         try:
-            # 专门查找未点赞的按钮
             like_button = page.locator('.discourse-reactions-reaction-button[title="点赞此帖子"]').first
             if like_button:
                 logger.info("找到未点赞的帖子，准备点赞")
@@ -166,10 +143,9 @@ class LinuxDoBrowser:
 
         page.close()
 
-
 if __name__ == "__main__":
     if not USERNAME or not PASSWORD:
-        print("Please set USERNAME and PASSWORD")
-        exit(1)
+        logger.error("请设置 USERNAME 和 PASSWORD 环境变量")
+        sys.exit(1)
     l = LinuxDoBrowser()
     l.run()
