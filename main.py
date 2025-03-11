@@ -47,22 +47,39 @@ class LinuxDoBrowser:
         self.page.goto(HOME_URL)
 
     def login(self):
-        logger.info("开始登录")
+    logger.info("开始登录")
+
+    # 确保按钮加载完成
+    self.page.wait_for_selector(".login-button .d-button-label", state="visible", timeout=60000)
+
+    # 尝试点击按钮
+    try:
         self.page.click(".login-button .d-button-label")
-        time.sleep(2)
-        self.page.fill("#login-account-name", USERNAME)
-        time.sleep(2)
-        self.page.fill("#login-account-password", PASSWORD)
-        time.sleep(2)
-        self.page.click("#login-button")
-        time.sleep(10)
-        user_ele = self.page.query_selector("#current-user")
-        if not user_ele:
-            logger.error("登录失败")
-            return False
-        else:
-            logger.info("登录成功")
-            return True
+    except Exception as e:
+        logger.warning(f"普通点击失败，尝试 JavaScript 方式: {e}")
+        self.page.evaluate("document.querySelector('.login-button .d-button-label').click()")
+
+    time.sleep(2)
+
+    # 填写用户名和密码
+    self.page.fill("#login-account-name", USERNAME)
+    self.page.fill("#login-account-password", PASSWORD)
+
+    time.sleep(2)
+    self.page.click("#login-button")
+
+    # 等待登录完成
+    time.sleep(10)
+
+    # 验证登录状态
+    user_ele = self.page.query_selector("#current-user")
+    if not user_ele:
+        logger.error("登录失败，截图保存")
+        self.page.screenshot(path="login_failed.png")
+        return False
+    else:
+        logger.info("登录成功")
+        return True
 
     def click_topic(self):
         topic_list = self.page.query_selector_all("#list-area .title")
